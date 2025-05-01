@@ -1,0 +1,151 @@
+COMPONENT Navbar:
+    // State management
+    STATE:
+        - mobileMenuOpen: Boolean (initially false)
+        - searchQuery: String (initially empty)
+        - notifications: Array (initially empty)
+        - unreadCount: Number (derived from notifications)
+        - currentPath: String (from router)
+
+    // Hooks
+    USE EFFECT:
+        ON MOUNT:
+            FETCH notifications FROM '/api/notifications'
+            SET notifications = response.data
+            START real-time updates via WebSocket
+
+        ON UNMOUNT:
+            CLEANUP WebSocket listener
+
+    // Handlers
+    FUNCTION toggleMobileMenu():
+        TOGGLE mobileMenuOpen state
+
+    FUNCTION handleSearch(query):
+        SET searchQuery = query
+        IF query.length > 2:
+            FETCH suggestions FROM '/api/search?q=' + query
+            DISPLAY dropdown with results
+
+    FUNCTION handleLogout():
+        CALL '/api/auth/logout'
+        CLEAR JWT token
+        REDIRECT to homepage
+
+    // Conditional rendering logic
+    FUNCTION renderLinks(user):
+        IF user == null:
+            RETURN [
+                { path: "/", label: "Home" },
+                { path: "/elections", label: "Live Elections" },
+                { path: "/about", label: "About" }
+            ]
+        ELSE IF user.role == "voter":
+            RETURN [
+                { path: "/dashboard", label: "Dashboard" },
+                { path: "/elections/ongoing", label: "My Votes", badge: unreadCount },
+                { path: "/history", label: "Voting History" }
+            ]
+        ELSE IF user.role == "admin":
+            RETURN [
+                { path: "/admin", label: "Admin Dashboard" },
+                { path: "/admin/elections", label: "Manage Elections", badge: pendingElectionsCount },
+                { path: "/admin/users", label: "User Management" }
+            ]
+
+    // Render
+    RETURN (
+        <nav container>
+            {/* Left section - Branding */}
+            <div brand>
+                <button mobile menu onClick=toggleMobileMenu>
+                    <icon name={mobileMenuOpen ? "close" : "menu"} />
+                </button>
+                <logo src="logo.png" alt="Voting System" />
+                <h1 app-name>CommunityVote</h1>
+            </div>
+
+            {/* Middle section - Primary navigation (desktop) */}
+            <div links desktop>
+                FOR EACH link IN renderLinks(currentUser):
+                    <a 
+                        href=link.path 
+                        className={currentPath == link.path ? "active" : ""}
+                    >
+                        {link.label}
+                        IF link.badge > 0:
+                            <span notification-badge>{link.badge}</span>
+                    </a>
+            </div>
+
+            {/* Right section - Interactive elements */}
+            <div utilities>
+                {/* Search bar (desktop only) */}
+                <div search-wrapper>
+                    <input 
+                        type="text" 
+                        value=searchQuery 
+                        onChange=handleSearch
+                        placeholder="Find elections..."
+                    />
+                    IF searchQuery.length > 0:
+                        <div search-results>
+                            RENDER suggestions as clickable items
+                        </div>
+                </div>
+
+                {/* User space */}
+                IF currentUser:
+                    <div user-dropdown>
+                        <button user-trigger>
+                            <avatar src={currentUser.photoUrl} />
+                            <span username>{currentUser.name}</span>
+                            <icon name="expand_more" />
+                        </button>
+                        <dropdown-menu>
+                            <div user-info>
+                                <p>{currentUser.email}</p>
+                                <p role-badge>{currentUser.role}</p>
+                            </div>
+                            <a href="/profile">Profile Settings</a>
+                            IF currentUser.role == "admin":
+                                <a href="/admin/settings">System Controls</a>
+                            <button onClick=handleLogout>Log Out</button>
+                        </dropdown-menu>
+                    </div>
+                ELSE:
+                    <div auth-buttons>
+                        <button login onClick=openLoginModal>Log In</button>
+                        <button register onClick=openRegisterModal>Register</button>
+                    </div>
+            </div>
+
+            {/* Mobile menu (overlay) */}
+            IF mobileMenuOpen:
+                <div mobile-overlay>
+                    <div mobile-content>
+                        <div mobile-header>
+                            <h2>Menu</h2>
+                            <button close onClick=toggleMobileMenu>×</button>
+                        </div>
+                        <div mobile-links>
+                            FOR EACH link IN renderLinks(currentUser):
+                                <a 
+                                    href=link.path 
+                                    className={currentPath == link.path ? "active" : ""}
+                                    onClick=toggleMobileMenu
+                                >
+                                    {link.label}
+                                    IF link.badge > 0:
+                                        <span badge>{link.badge}</span>
+                                </a>
+                        </div>
+                        IF currentUser:
+                            <div mobile-user>
+                                <p>Signed in as {currentUser.name}</p>
+                                <button logout onClick=handleLogout>Log Out</button>
+                            </div>
+                    </div>
+                </div>
+        </nav>
+    )
